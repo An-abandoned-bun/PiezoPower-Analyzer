@@ -1,0 +1,124 @@
+"""PDF report generation for PiezoPower Analyzer."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+
+def generate_pdf_report(
+    output_path: str | Path,
+    summary: dict[str, float],
+    steps: pd.DataFrame,
+    chart_path: str | Path | None = None,
+    title: str = "PiezoPower Analyzer - Experiment Report",
+) -> Path:
+    """Generate a PDF experiment report and return its path."""
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = SimpleDocTemplate(
+        str(output),
+        pagesize=A4,
+        rightMargin=1.5 * cm,
+        leftMargin=1.5 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+    )
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph(title, styles["Title"]))
+    story.append(Paragraph("Python dashboard for piezoelectric tile energy harvesting experiments.", styles["BodyText"]))
+    story.append(Spacer(1, 0.4 * cm))
+
+    summary_rows = [["Metric", "Value"]]
+    friendly_names = {
+        "duration_s": "Experiment duration (s)",
+        "samples": "Samples recorded",
+        "steps_detected": "Steps detected",
+        "max_voltage_v": "Maximum voltage (V)",
+        "average_voltage_v": "Average voltage (V)",
+        "peak_step_voltage_v": "Peak step voltage (V)",
+        "total_energy_j": "Estimated total energy (J)",
+        "total_energy_mj": "Estimated total energy (mJ)",
+        "steps_per_minute": "Step rate (steps/min)",
+    }
+    for key, name in friendly_names.items():
+        value = summary.get(key, 0)
+        if key in {"samples", "steps_detected"}:
+            formatted = f"{int(value)}"
+        else:
+            formatted = f"{value:.4f}"
+        summary_rows.append([name, formatted])
+
+    summary_table = Table(summary_rows, colWidths=[8 * cm, 6 * cm])
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F4E79")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F2F6FA")]),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    story.append(summary_table)
+    story.append(Spacer(1, 0.5 * cm))
+
+    if chart_path and Path(chart_path).exists():
+        story.append(Paragraph("Voltage Signal", styles["Heading2"]))
+        story.append(Image(str(chart_path), width=16 * cm, height=8 * cm))
+        story.append(Spacer(1, 0.4 * cm))
+
+    story.append(Paragraph("Detected Step Peaks", styles["Heading2"]))
+    if steps.empty:
+        story.append(Paragraph("No steps detected using the selected threshold.", styles["BodyText"]))
+    else:
+        step_rows = [["Step", "Time (s)", "Peak voltage (V)", "Energy (mJ)"]]
+        for _, row in steps.head(12).iterrows():
+            step_rows.append(
+                [
+                    int(row["step_number"]),
+                    f"{row['time_s']:.2f}",
+                    f"{row['peak_voltage_v']:.3f}",
+                    f"{row['energy_j'] * 1000:.4f}",
+                ]
+            )
+        if len(steps) > 12:
+            step_rows.append(["...", "...", "...", "..."])
+
+        step_table = Table(step_rows, colWidths=[2 * cm, 4 * cm, 5 * cm, 4 * cm])
+        step_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2E7D32")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F4FAF4")]),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ]
+            )
+        )
+        story.append(step_table)
+
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(
+        Paragraph(
+            "Formula used: E = 1/2 x C x V^2. This is a simplified estimate for educational experiments; real hardware should account for rectifier losses, leakage, and ADC calibration.",
+            styles["Italic"],
+        )
+    )
+
+    doc.build(story)
+    return output

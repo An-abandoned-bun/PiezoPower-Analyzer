@@ -1,0 +1,10 @@
+from src.energy_calculator import capacitor_energy_joules, joules_to_millijoules
+
+
+def test_capacitor_energy_joules():
+    # E = 1/2 * 0.001 F * 2^2 = 0.002 J
+    assert capacitor_energy_joules(0.001, 2.0) == 0.002
+
+
+def test_joules_to_millijoules():
+    assert joules_to_millijoules(0.002) == 2.0
